@@ -17,9 +17,18 @@ except ImportError:
     _HAS_DND = False
 
 
+_DND_OK = False
+
+
 def _make_root():
+    global _DND_OK
     if _HAS_DND:
-        return TkinterDnD.Tk()
+        try:
+            root = TkinterDnD.Tk()
+            _DND_OK = True
+            return root
+        except (tk.TclError, RuntimeError):
+            pass
     return tk.Tk()
 
 
@@ -61,9 +70,8 @@ class SignaturePacketGUI:
 
         ttk.Label(main, text="PDF / DOCX files").pack(anchor=tk.W)
         drop_hint = (
-            "Drop files here (install tkinterdnd2 for drag-and-drop), "
-            "or use Browse."
-            if not _HAS_DND
+            "Drop files here (install tkinterdnd2 for drag-and-drop), or use Browse."
+            if not _DND_OK
             else "Drop files here or use Browse."
         )
         ttk.Label(main, text=drop_hint, font=("", 9)).pack(anchor=tk.W)
@@ -76,7 +84,7 @@ class SignaturePacketGUI:
         self.listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scroll.config(command=self.listbox.yview)
 
-        if _HAS_DND:
+        if _DND_OK:
             self.listbox.drop_target_register(DND_FILES)
             self.listbox.dnd_bind("<<Drop>>", self._on_drop)
 
@@ -112,7 +120,9 @@ class SignaturePacketGUI:
         self.run_btn.pack(fill=tk.X, pady=(8, 4))
 
         ttk.Label(main, text="Log").pack(anchor=tk.W)
-        self.log = scrolledtext.ScrolledText(main, height=6, state=tk.DISABLED, wrap=tk.WORD)
+        self.log = scrolledtext.ScrolledText(
+            main, height=6, state=tk.DISABLED, wrap=tk.WORD
+        )
         self.log.pack(fill=tk.BOTH, expand=True)
 
     def _log_line(self, msg: str) -> None:
@@ -186,7 +196,9 @@ class SignaturePacketGUI:
         if self._busy:
             return
         if not self._paths:
-            messagebox.showinfo("Signature packet", "Add at least one PDF or DOCX file.")
+            messagebox.showinfo(
+                "Signature packet", "Add at least one PDF or DOCX file."
+            )
             return
         out = self.output_var.get().strip()
         if not out:
