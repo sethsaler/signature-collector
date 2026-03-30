@@ -55,7 +55,27 @@ if ! have python3; then
   exit 1
 fi
 
-VENV="${VENV:-$ROOT/.venv}"
+# Virtualenv path: VENV env overrides; else project .venv if writable; else user cache
+# (mirrors scripts/resolve_venv.sh for curl|bash users who only have this file).
+signature_packet_venv_path() {
+  local root="$1"
+  if [ -n "${VENV:-}" ]; then
+    printf '%s\n' "$VENV"
+    return
+  fi
+  if [ -w "$root" ]; then
+    printf '%s\n' "$root/.venv"
+    return
+  fi
+  local home="${HOME:-/tmp}"
+  local cache_root="${XDG_CACHE_HOME:-$home/.cache}"
+  printf '%s\n' "$cache_root/signature-packet/venv"
+}
+VENV="$(signature_packet_venv_path "$ROOT")"
+mkdir -p "$(dirname "$VENV")"
+if [[ ! -w "$ROOT" ]]; then
+  echo "Project directory is read-only; using virtualenv at: $VENV"
+fi
 python3 -m venv "$VENV"
 # shellcheck source=/dev/null
 source "$VENV/bin/activate"
