@@ -1,9 +1,24 @@
 #!/usr/bin/env bash
 # Install system packages (Tesseract, LibreOffice, Tk) and Python deps for signature-packet.
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/OWNER/REPO/BRANCH/scripts/install_deps.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/OWNER/REPO/BRANCH/scripts/install_deps.sh -o install_deps.sh
+#   bash install_deps.sh
 # Or from a clone:
 #   bash scripts/install_deps.sh
+
+# Detect if script is being piped directly (piped curl | bash won't work correctly)
+if [[ -z "${BASH_SOURCE[0]:-}" ]] || [[ "${BASH_SOURCE[0]}" == "-" ]] || [[ ! -f "${BASH_SOURCE[0]}" ]]; then
+    echo "Error: This installer cannot be piped directly via 'curl ... | bash'"
+    echo ""
+    echo "The script needs to know its location to set up the Python environment correctly."
+    echo ""
+    echo "Please download and run it instead:"
+    echo "  curl -fsSL https://raw.githubusercontent.com/sethsaler/signature-collector/main/scripts/install_deps.sh -o install_deps.sh"
+    echo "  bash install_deps.sh"
+    echo ""
+    exit 1
+fi
+
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
