@@ -7,6 +7,11 @@
 
 set -euo pipefail
 
+# Configuration
+DESKTOP_DIR="${HOME}/Desktop"
+LAUNCHER_NAME="Signature Packet.command"
+REPO_NAME="signature-collector"
+
 # Detect if script is being piped directly
 IS_PIPED=false
 if [[ -z "${BASH_SOURCE[0]:-}" ]] || [[ "${BASH_SOURCE[0]}" == "-" ]] || [[ ! -f "${BASH_SOURCE[0]}" ]]; then
@@ -43,6 +48,11 @@ install_brew() {
 }
 
 # Install system dependencies
+echo "═══════════════════════════════════════════════════════════"
+echo "  Installing System Dependencies"
+echo "═══════════════════════════════════════════════════════════"
+echo ""
+
 if have apt-get; then
   install_apt
 elif have dnf; then
@@ -60,69 +70,62 @@ if ! have python3; then
   exit 1
 fi
 
+# Setup desktop directory
+echo ""
+echo "Setting up Desktop directory..."
+mkdir -p "$DESKTOP_DIR"
+
 # Determine ROOT and INSTALL_METHOD based on execution context
 if [[ "$IS_PIPED" == "true" ]]; then
-  # Script is being piped - need to get the code somehow
-  INSTALL_METHOD=""
+  # Script is being piped - clone to Desktop
+  CLONE_DIR="${DESKTOP_DIR}/${REPO_NAME}"
+  echo ""
+  echo "═══════════════════════════════════════════════════════════"
+  echo "  Installing to Desktop"
+  echo "═══════════════════════════════════════════════════════════"
+  echo ""
+  echo "Cloning repository to $CLONE_DIR..."
   
-  if have git; then
-    # Option 1: Clone the repository
-    CLONE_DIR="${HOME}/.signature-packet/signature-collector"
-    echo "Detected piped execution with git available."
-    echo "Cloning repository to $CLONE_DIR..."
-    
-    # Remove existing clone if present
-    if [[ -d "$CLONE_DIR" ]]; then
-      rm -rf "$CLONE_DIR"
-    fi
-    
-    git clone --depth 1 https://github.com/sethsaler/signature-collector.git "$CLONE_DIR"
-    ROOT="$CLONE_DIR"
-    INSTALL_METHOD="editable"
-    echo "Repository cloned successfully."
-  else
-    # Option 2: Direct pip install from GitHub
-    echo "Detected piped execution without git."
-    echo "Will install directly from GitHub (non-editable)."
-    INSTALL_METHOD="direct"
-    ROOT=""  # Not needed for direct install
+  # Remove existing clone if present
+  if [[ -d "$CLONE_DIR" ]]; then
+    rm -rf "$CLONE_DIR"
   fi
+  
+  git clone --depth 1 https://github.com/sethsaler/signature-collector.git "$CLONE_DIR"
+  ROOT="$CLONE_DIR"
+  INSTALL_METHOD="editable"
+  echo "✓ Repository cloned successfully."
 else
-  # Script is run from a clone - use current directory
-  ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  # Script is run from a clone
+  CURRENT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
   
-  # Check if pyproject.toml exists (script may have been downloaded standalone)
-  if [[ ! -f "$ROOT/pyproject.toml" ]]; then
-    echo "Script directory does not contain pyproject.toml - script may have been downloaded standalone."
-    echo "Cloning repository to get full project files..."
-    INSTALL_METHOD=""
-  else
+  # Check if already on Desktop
+  if [[ "$CURRENT_DIR" == "$DESKTOP_DIR/$REPO_NAME" ]]; then
+    echo "✓ Already running from Desktop location"
+    ROOT="$CURRENT_DIR"
     INSTALL_METHOD="editable"
-  fi
-fi
-
-# If INSTALL_METHOD is empty (piped or standalone without pyproject.toml), clone if possible
-if [[ -z "$INSTALL_METHOD" ]]; then
-  if have git; then
-    # Clone the repository
-    CLONE_DIR="${HOME}/.signature-packet/signature-collector"
-    echo "Cloning repository to $CLONE_DIR..."
+  else
+    # Move/symlink to Desktop
+    echo ""
+    echo "═══════════════════════════════════════════════════════════"
+    echo "  Moving Repository to Desktop"
+    echo "═══════════════════════════════════════════════════════════"
+    echo ""
     
-    # Remove existing clone if present
-    if [[ -d "$CLONE_DIR" ]]; then
-      rm -rf "$CLONE_DIR"
+    TARGET_DIR="${DESKTOP_DIR}/${REPO_NAME}"
+    
+    # Remove existing if present
+    if [[ -d "$TARGET_DIR" ]]; then
+      echo "Removing existing directory at $TARGET_DIR..."
+      rm -rf "$TARGET_DIR"
     fi
     
-    git clone --depth 1 https://github.com/sethsaler/signature-collector.git "$CLONE_DIR"
-    ROOT="$CLONE_DIR"
+    # Copy to Desktop
+    echo "Copying repository to Desktop..."
+    cp -R "$CURRENT_DIR" "$TARGET_DIR"
+    ROOT="$TARGET_DIR"
     INSTALL_METHOD="editable"
-    echo "Repository cloned successfully."
-  else
-    # Direct pip install from GitHub
-    echo "Git not available."
-    echo "Will install directly from GitHub (non-editable)."
-    INSTALL_METHOD="direct"
-    ROOT=""  # Not needed for direct install
+    echo "✓ Repository copied to Desktop"
   fi
 fi
 
@@ -145,9 +148,11 @@ signature_packet_venv_path() {
 VENV="$(signature_packet_venv_path "$ROOT")"
 mkdir -p "$(dirname "$VENV")"
 
-if [[ -n "$ROOT" ]] && [[ ! -w "$ROOT" ]]; then
-  echo "Project directory is read-only; using virtualenv at: $VENV"
-fi
+echo ""
+echo "═══════════════════════════════════════════════════════════"
+echo "  Creating Python Virtual Environment"
+echo "═══════════════════════════════════════════════════════════"
+echo ""
 
 python3 -m venv "$VENV"
 # shellcheck source=/dev/null
@@ -155,118 +160,64 @@ source "$VENV/bin/activate"
 python -m pip install -U pip
 
 # Install signature-packet based on method
-if [[ "$INSTALL_METHOD" == "editable" ]]; then
-  cd "$ROOT"
-  python -m pip install -e ".[gui]"
-  echo ""
-  echo "✓ Installed in editable mode from: $ROOT"
-  echo ""
-  echo "Done. Activate the venv and run:"
-  echo "  source $VENV/bin/activate"
-  echo "  signature-packet-gui    # or: signature-packet file1.pdf -o out.pdf"
-  echo ""
-  echo "To update: cd $ROOT && git pull"
-  
-  if [[ "$IS_PIPED" == "true" ]]; then
-    echo ""
-    echo "Repository cloned to: $ROOT"
-  fi
-else
-  # Direct install from GitHub
-  python -m pip install "git+https://github.com/sethsaler/signature-collector.git#egg=signature-packet[gui]"
-  echo ""
-  echo "✓ Installed directly from GitHub (non-editable)"
-  echo ""
-  echo "Done. Activate the venv and run:"
-  echo "  source $VENV/bin/activate"
-  echo "  signature-packet-gui    # or: signature-packet file1.pdf -o out.pdf"
-  echo ""
-  echo "Note: To modify the code, clone the repository:"
-  echo "  git clone https://github.com/sethsaler/signature-collector.git"
-  echo "  cd signature-collector"
-  echo "  bash scripts/install_deps.sh"
-fi
+echo ""
+echo "Installing signature-packet..."
+cd "$ROOT"
+python -m pip install -e ".[gui]"
 
-# Create launcher .command file for easy GUI access
-if [ -t 0 ]; then
-  # Only show interactive prompt if stdin is a TTY (not in CI/automation)
-  echo ""
-  echo "═══════════════════════════════════════════════════════════"
-  echo "  Create Desktop Launcher?"
-  echo "═══════════════════════════════════════════════════════════"
-  echo ""
-  echo "Would you like to create a launcher icon for easy GUI access?"
-  echo "  [1] Desktop (~/Desktop)"
-  echo "  [2] Applications folder (~/Applications)"
-  echo "  [3] Custom location"
-  echo "  [4] Skip (use command line only)"
-  echo ""
-  printf "Enter your choice [1-4]: "
-  read -r choice
-  
-  case "$choice" in
-    1)
-      LAUNCHER_DEST="$HOME/Desktop"
-      ;;
-    2)
-      LAUNCHER_DEST="$HOME/Applications"
-      mkdir -p "$LAUNCHER_DEST"
-      ;;
-    3)
-      printf "Enter the full path where you want the launcher: "
-      read -r custom_path
-      LAUNCHER_DEST="$custom_path"
-      ;;
-    4|*)
-      echo "Skipping launcher creation. You can run the GUI from the command line:"
-      echo "  signature-packet-gui"
-      LAUNCHER_DEST=""
-      ;;
-  esac
-  
-  if [[ -n "$LAUNCHER_DEST" ]]; then
-    # Determine where the .command file is (repo or needs to be created)
-    if [[ -n "$ROOT" ]] && [[ -f "$ROOT/signature-packet-gui.command" ]]; then
-      COMMAND_SOURCE="$ROOT/signature-packet-gui.command"
-    else
-      # Create it inline for direct install method
-      COMMAND_SOURCE=""
-    fi
-    
-    LAUNCHER_PATH="$LAUNCHER_DEST/signature-packet-gui.command"
-    
-    if [[ -f "$COMMAND_SOURCE" ]]; then
-      cp "$COMMAND_SOURCE" "$LAUNCHER_PATH"
-    else
-      # Create the .command file inline
-      cat > "$LAUNCHER_PATH" << 'COMMAND_EOF'
+echo ""
+echo "✓ Installed successfully from: $ROOT"
+
+# Create launcher .command file on Desktop
+echo ""
+echo "═══════════════════════════════════════════════════════════"
+echo "  Creating Desktop Launcher"
+echo "═══════════════════════════════════════════════════════════"
+echo ""
+
+LAUNCHER_PATH="${DESKTOP_DIR}/${LAUNCHER_NAME}"
+
+# Create the .command launcher file
+cat > "$LAUNCHER_PATH" << LAUNCHER_EOF
 #!/bin/bash
 # Signature Packet GUI Launcher
 # Double-click this file to launch the Signature Packet GUI
 
 set -euo pipefail
 
+# Change to the repo directory
+REPO_DIR="\${HOME}/Desktop/${REPO_NAME}"
+cd "\$REPO_DIR"
+
 # Find the virtual environment
-VENV_DIR="${HOME}/.signature-packet/signature-collector/.venv"
+VENV_DIR="\${REPO_DIR}/.venv"
 
-if [ ! -d "$VENV_DIR" ]; then
-  osascript -e 'display dialog "Signature Packet is not installed. Please run the installer first:
-
-curl -fsSL https://raw.githubusercontent.com/sethsaler/signature-collector/main/scripts/install_deps.sh -o install_deps.sh && bash install_deps.sh" buttons {"OK"} default button 1 with icon stop'
+if [ ! -d "\$VENV_DIR" ]; then
+  osascript -e 'display dialog "Signature Packet is not installed. Please reinstall." buttons {"OK"} default button 1 with icon stop'
   exit 1
 fi
 
 # Activate venv and run GUI
-exec "$VENV_DIR/bin/python" -m signature_packet.gui
-COMMAND_EOF
-    fi
-    
-    chmod +x "$LAUNCHER_PATH"
-    echo ""
-    echo "✅ Launcher created at: $LAUNCHER_PATH"
-    echo "   Double-click it anytime to launch the GUI!"
-  fi
-else
-  echo ""
-  echo "Run the GUI with: signature-packet-gui"
-fi
+exec "\$VENV_DIR/bin/python" -m signature_packet.gui
+LAUNCHER_EOF
+
+chmod +x "$LAUNCHER_PATH"
+
+echo "✅ Desktop launcher created: $LAUNCHER_PATH"
+echo ""
+echo "═══════════════════════════════════════════════════════════"
+echo "  Installation Complete!"
+echo "═══════════════════════════════════════════════════════════"
+echo ""
+echo "📁 Repository location: $ROOT"
+echo "🚀 Desktop launcher: $LAUNCHER_PATH"
+echo ""
+echo "To use Signature Packet:"
+echo "  1. Double-click the 'Signature Packet' icon on your Desktop"
+echo "  2. Or run from terminal:"
+echo "     cd $ROOT"
+echo "     source .venv/bin/activate"
+echo "     signature-packet-gui"
+echo ""
+echo "To update: cd $ROOT && git pull && pip install -e '.[gui]'"
+echo ""

@@ -14,8 +14,13 @@ DEFAULT_KEYWORDS: tuple[str, ...] = (
     r"\bnotarization\b",
     r"\bwitness\b",
     r"\bprint name\b",
+    r"\bname\s*:\s*\w+",
+    r"\btitle\s*:\s*\w+",
     r"\btitle\s*\(if applicable\)",
-    r"\bby:\s*$",
+    r"\bby:\b",
+    r"\bits\s+general\s+partner\b",
+    r"\bits\s+managing\s+member\b",
+    r"\bits\s+authorized\s+agent\b",
     r"\bauthorized signature\b",
     r"\bacceptance\b",
     r"\backnowledg",
@@ -24,13 +29,23 @@ DEFAULT_KEYWORDS: tuple[str, ...] = (
     r"\bdate:\b",
     r"\bdated\b",
     r"\bsignatory\b",
+    r"\bgeneral partner\b",
+    r"\blimited partner\b",
+    r"\bmanager\b",
+    r"\bmanaging member\b",
 )
 
 # Lines that look like labeled signature blanks (underscores or long rules).
 BLANK_LINE_PATTERNS: tuple[re.Pattern[str], ...] = (
-    re.compile(r"^(?:signature|signer|name|title|date)\s*:\s*[_\s\-]{8,}", re.I | re.M),
+    # Label followed by underscores/spaces (e.g., "Signature: ______" or "By: ______")
+    re.compile(
+        r"^(?:signature|signer|name|title|date|by)\s*:\s*[_\s\-]{6,}", re.I | re.M
+    ),
+    # Line with text followed by many underscores (e.g., "By: ________________________________")
+    re.compile(r"^by\s*:\s*\w*[_\s\-]{10,}", re.I | re.M),
+    # Pure underscores or em dashes
     re.compile(r"_{10,}"),
-    re.compile(r"—{8,}"),  # em dash rules
+    re.compile(r"—{8,}"),
 )
 
 
@@ -57,6 +72,40 @@ def _blank_line_score(text: str) -> int:
     return min(n, 5)
 
 
+# Structured signature block patterns (multi-line combinations)
+STRUCTURED_BLOCK_PATTERNS: tuple[re.Pattern[str], ...] = (
+    # Entity name + By line + signature line pattern
+    re.compile(
+        r"(?:^|\n)\s*\w[^\n]*(?:l\.p\.|l\.l\.c\.|inc\.|corp\.|ltd\.|company)"  # Entity name
+        r".*?by\s*:.*?[_\-]{6,}",  # By line with underscores (signature line)
+        re.I | re.S,
+    ),
+    # Multiple signature elements in proximity
+    re.compile(
+        r"by\s*:.*?name\s*:.*?title\s*:",
+        re.I | re.S,
+    ),
+)
+
+
+def _structured_block_score(text: str) -> int:
+    """Detect structured signature blocks with multiple related elements."""
+    score = 0
+    for pat in STRUCTURED_BLOCK_PATTERNS:
+        if pat.search(text):
+            score += 3  # Strong indicator of signature block
+    # Bonus for having both Name: and Title: on the same page
+    if re.search(r"\bname\s*:\s*\w+", text, re.I) and re.search(
+        r"\btitle\s*:\s*\w+", text, re.I
+    ):
+        score += 2
+    # Bonus for multiple "By:" lines (often indicates entity + signature line)
+    by_count = len(re.findall(r"\bby\s*:", text, re.I))
+    if by_count >= 2:
+        score += 2
+    return min(score, 6)
+
+
 def score_page_ocr_text(
     text: str,
     *,
@@ -70,8 +119,10 @@ def score_page_ocr_text(
     """
     kw_count, _ = _count_keyword_hits(text, keyword_patterns)
     blank = _blank_line_score(text)
-    # Weight keywords heavily; blanks support typical "Name: _______" layouts.
-    score = kw_count * 1.5 + blank * 0.8
+    struct = _structured_block_score(text)
+    # Weight keywords heavily; blanks support typical "Name: _______" layouts;
+    # structured blocks provide bonus for complete signature sections
+    score = kw_count * 1.5 + blank * 0.8 + struct * 1.0
     if kw_count < min_keyword_hits:
         return 0.0
     return score if score >= min_score else 0.0
@@ -84,12 +135,15 @@ def is_signature_page(
     min_keyword_hits: int = 2,
     min_score: float = 2.0,
 ) -> bool:
-    return score_page_ocr_text(
-        text,
-        keyword_patterns=keyword_patterns,
-        min_keyword_hits=min_keyword_hits,
-        min_score=min_score,
-    ) > 0
+    return (
+        score_page_ocr_text(
+            text,
+            keyword_patterns=keyword_patterns,
+            min_keyword_hits=min_keyword_hits,
+            min_score=min_score,
+        )
+        > 0
+    )
 
 
 def find_signature_pages(
@@ -104,7 +158,8 @@ def find_signature_pages(
     for i, t in enumerate(page_texts):
         kw_count, hits = _count_keyword_hits(t, keyword_patterns)
         blank = _blank_line_score(t)
-        sc = kw_count * 1.5 + blank * 0.8
+        struct = _structured_block_score(t)
+        sc = kw_count * 1.5 + blank * 0.8 + struct * 1.0
         if kw_count < min_keyword_hits or sc < min_score:
             continue
         out.append(PageScore(page_index=i, score=sc, matched_keywords=tuple(hits)))
