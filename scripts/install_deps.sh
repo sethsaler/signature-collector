@@ -186,3 +186,87 @@ else
   echo "  cd signature-collector"
   echo "  bash scripts/install_deps.sh"
 fi
+
+# Create launcher .command file for easy GUI access
+if [ -t 0 ]; then
+  # Only show interactive prompt if stdin is a TTY (not in CI/automation)
+  echo ""
+  echo "═══════════════════════════════════════════════════════════"
+  echo "  Create Desktop Launcher?"
+  echo "═══════════════════════════════════════════════════════════"
+  echo ""
+  echo "Would you like to create a launcher icon for easy GUI access?"
+  echo "  [1] Desktop (~/Desktop)"
+  echo "  [2] Applications folder (~/Applications)"
+  echo "  [3] Custom location"
+  echo "  [4] Skip (use command line only)"
+  echo ""
+  printf "Enter your choice [1-4]: "
+  read -r choice
+  
+  case "$choice" in
+    1)
+      LAUNCHER_DEST="$HOME/Desktop"
+      ;;
+    2)
+      LAUNCHER_DEST="$HOME/Applications"
+      mkdir -p "$LAUNCHER_DEST"
+      ;;
+    3)
+      printf "Enter the full path where you want the launcher: "
+      read -r custom_path
+      LAUNCHER_DEST="$custom_path"
+      ;;
+    4|*)
+      echo "Skipping launcher creation. You can run the GUI from the command line:"
+      echo "  signature-packet-gui"
+      LAUNCHER_DEST=""
+      ;;
+  esac
+  
+  if [[ -n "$LAUNCHER_DEST" ]]; then
+    # Determine where the .command file is (repo or needs to be created)
+    if [[ -n "$ROOT" ]] && [[ -f "$ROOT/signature-packet-gui.command" ]]; then
+      COMMAND_SOURCE="$ROOT/signature-packet-gui.command"
+    else
+      # Create it inline for direct install method
+      COMMAND_SOURCE=""
+    fi
+    
+    LAUNCHER_PATH="$LAUNCHER_DEST/signature-packet-gui.command"
+    
+    if [[ -f "$COMMAND_SOURCE" ]]; then
+      cp "$COMMAND_SOURCE" "$LAUNCHER_PATH"
+    else
+      # Create the .command file inline
+      cat > "$LAUNCHER_PATH" << 'COMMAND_EOF'
+#!/bin/bash
+# Signature Packet GUI Launcher
+# Double-click this file to launch the Signature Packet GUI
+
+set -euo pipefail
+
+# Find the virtual environment
+VENV_DIR="${HOME}/.signature-packet/signature-collector/.venv"
+
+if [ ! -d "$VENV_DIR" ]; then
+  osascript -e 'display dialog "Signature Packet is not installed. Please run the installer first:
+
+curl -fsSL https://raw.githubusercontent.com/sethsaler/signature-collector/main/scripts/install_deps.sh -o install_deps.sh && bash install_deps.sh" buttons {"OK"} default button 1 with icon stop'
+  exit 1
+fi
+
+# Activate venv and run GUI
+exec "$VENV_DIR/bin/python" -m signature_packet.gui
+COMMAND_EOF
+    fi
+    
+    chmod +x "$LAUNCHER_PATH"
+    echo ""
+    echo "✅ Launcher created at: $LAUNCHER_PATH"
+    echo "   Double-click it anytime to launch the GUI!"
+  fi
+else
+  echo ""
+  echo "Run the GUI with: signature-packet-gui"
+fi
