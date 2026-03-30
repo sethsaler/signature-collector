@@ -27,6 +27,7 @@ class PacketOptions:
     tesseract_cmd: str | None = None
     title_page: bool = False
     verbose: bool = False
+    organization_names: list[str] | None = None
 
 
 def _ensure_pdf(path: str, temp_dirs: list[str]) -> str:
@@ -77,6 +78,7 @@ def build_signature_packet(
                 texts,
                 min_keyword_hits=options.min_keywords,
                 min_score=options.min_score,
+                organization_names=options.organization_names,
             )
             indices = [h.page_index for h in hits]
             if options.verbose:

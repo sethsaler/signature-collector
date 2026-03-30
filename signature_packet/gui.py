@@ -59,8 +59,8 @@ class SignaturePacketGUI:
     def __init__(self) -> None:
         self.root = _make_root()
         self.root.title("Signature packet")
-        self.root.minsize(420, 360)
-        self.root.geometry("520x420")
+        self.root.minsize(420, 480)
+        self.root.geometry("520x520")
 
         self._paths: list[str] = []
         self._busy = False
@@ -115,6 +115,18 @@ class SignaturePacketGUI:
         ttk.Checkbutton(main, text="Prepend title page", variable=self.title_var).pack(
             anchor=tk.W, pady=(4, 0)
         )
+
+        # Organization names input
+        ttk.Label(main, text="Organization names (one per line, required)").pack(
+            anchor=tk.W, pady=(8, 0)
+        )
+        ttk.Label(
+            main,
+            text="Only signature pages mentioning these organizations will be extracted",
+            font=("", 9),
+        ).pack(anchor=tk.W)
+        self.org_text = scrolledtext.ScrolledText(main, height=4, wrap=tk.WORD)
+        self.org_text.pack(fill=tk.X, pady=(2, 0))
 
         self.run_btn = ttk.Button(main, text="Build packet", command=self._run)
         self.run_btn.pack(fill=tk.X, pady=(8, 4))
@@ -205,14 +217,25 @@ class SignaturePacketGUI:
             messagebox.showinfo("Signature packet", "Choose an output PDF path.")
             return
 
+        # Get organization names from text area
+        org_text = self.org_text.get("1.0", tk.END).strip()
+        org_names = [line.strip() for line in org_text.split("\n") if line.strip()]
+
+        if not org_names:
+            messagebox.showinfo(
+                "Signature packet", "Please enter at least one organization name."
+            )
+            return
+
         opts = PacketOptions(
             output=out,
             title_page=self.title_var.get(),
             verbose=True,
+            organization_names=org_names,
         )
 
         self._set_busy(True)
-        self._log_line("Starting…")
+        self._log_line(f"Starting… (filtering for: {', '.join(org_names)})")
 
         def work() -> None:
             def log_ui(m: str) -> None:
@@ -236,7 +259,11 @@ class SignaturePacketGUI:
                 )
                 return
 
-            msg = None if code == 0 else "No signature pages found in any input."
+            msg = (
+                None
+                if code == 0
+                else "No signature pages found matching the specified organizations."
+            )
             self.root.after(
                 0,
                 lambda c=code, m=msg: self._finish_run(c == 0, m),

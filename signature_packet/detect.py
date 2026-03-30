@@ -152,8 +152,13 @@ def find_signature_pages(
     keyword_patterns: tuple[str, ...] = DEFAULT_KEYWORDS,
     min_keyword_hits: int = 2,
     min_score: float = 2.0,
+    organization_names: list[str] | None = None,
 ) -> list[PageScore]:
-    """Return signature page indices in document order with diagnostic scores."""
+    """Return signature page indices in document order with diagnostic scores.
+
+    If organization_names is provided, only return pages that contain at least
+    one of the organization names (case-insensitive fuzzy matching).
+    """
     out: list[PageScore] = []
     for i, t in enumerate(page_texts):
         kw_count, hits = _count_keyword_hits(t, keyword_patterns)
@@ -162,5 +167,26 @@ def find_signature_pages(
         sc = kw_count * 1.5 + blank * 0.8 + struct * 1.0
         if kw_count < min_keyword_hits or sc < min_score:
             continue
+
+        # Check organization filter if provided
+        if organization_names:
+            org_matches = _count_organization_matches(t, organization_names)
+            if org_matches == 0:
+                continue  # Skip pages that don't match any organization
+
         out.append(PageScore(page_index=i, score=sc, matched_keywords=tuple(hits)))
     return out
+
+
+def _count_organization_matches(text: str, org_names: list[str]) -> int:
+    """Count how many organization names appear in the text (case-insensitive fuzzy match).
+
+    Returns the number of organization names found in the text.
+    """
+    text_lower = text.lower()
+    matches = 0
+    for org in org_names:
+        org_clean = org.lower().strip()
+        if org_clean and org_clean in text_lower:
+            matches += 1
+    return matches

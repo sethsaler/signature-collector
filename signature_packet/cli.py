@@ -65,6 +65,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         action="store_true",
         help="Print per-file detected page indices",
     )
+    p.add_argument(
+        "--organizations",
+        required=True,
+        nargs="*",
+        help="Organization names to filter by (one or more, space-separated). Only signature pages mentioning these organizations will be extracted.",
+    )
     return p.parse_args(argv)
 
 
@@ -79,6 +85,7 @@ def main(argv: list[str] | None = None) -> int:
         tesseract_cmd=args.tesseract_cmd,
         title_page=args.title_page,
         verbose=args.verbose,
+        organization_names=list(args.organizations) if args.organizations else None,
     )
     code, _path = build_signature_packet(args.inputs, opts)
     return code
