@@ -90,7 +90,40 @@ if [[ "$IS_PIPED" == "true" ]]; then
 else
   # Script is run from a clone - use current directory
   ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-  INSTALL_METHOD="editable"
+  
+  # Check if pyproject.toml exists (script may have been downloaded standalone)
+  if [[ ! -f "$ROOT/pyproject.toml" ]]; then
+    echo "Script directory does not contain pyproject.toml - script may have been downloaded standalone."
+    echo "Cloning repository to get full project files..."
+    INSTALL_METHOD=""
+  else
+    INSTALL_METHOD="editable"
+  fi
+fi
+
+# If INSTALL_METHOD is empty (piped or standalone without pyproject.toml), clone if possible
+if [[ -z "$INSTALL_METHOD" ]]; then
+  if have git; then
+    # Clone the repository
+    CLONE_DIR="${HOME}/.signature-packet/signature-collector"
+    echo "Cloning repository to $CLONE_DIR..."
+    
+    # Remove existing clone if present
+    if [[ -d "$CLONE_DIR" ]]; then
+      rm -rf "$CLONE_DIR"
+    fi
+    
+    git clone --depth 1 https://github.com/sethsaler/signature-collector.git "$CLONE_DIR"
+    ROOT="$CLONE_DIR"
+    INSTALL_METHOD="editable"
+    echo "Repository cloned successfully."
+  else
+    # Direct pip install from GitHub
+    echo "Git not available."
+    echo "Will install directly from GitHub (non-editable)."
+    INSTALL_METHOD="direct"
+    ROOT=""  # Not needed for direct install
+  fi
 fi
 
 # Virtualenv path determination
